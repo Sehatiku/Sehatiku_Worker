@@ -41,6 +41,19 @@ func (m *mockNotifRepo) UpdateStatus(_ context.Context, id, status string, _ *st
 	return nil
 }
 
+type mockInboxRepo struct {
+	created []*entity.PatientNotification
+	err     error
+}
+
+func (m *mockInboxRepo) Create(_ context.Context, n *entity.PatientNotification) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.created = append(m.created, n)
+	return nil
+}
+
 type mockSender struct {
 	patientErr     error
 	companionErr   error
@@ -163,6 +176,53 @@ func TestRun_MarksFailedOnWAError(t *testing.T) {
 	}
 	if !hasFailed {
 		t.Error("expected UpdateStatus('failed') to be called")
+	}
+}
+
+func TestRun_CreatesInAppInboxRowForPatient(t *testing.T) {
+	cp := "628222" // companion present — must NOT get an inbox row (no app account)
+	patients := []entity.Patient{{
+		ID: "p1", FullName: "Budi", PhoneNumber: "628111",
+		CompanionPhone: &cp, Status: "active",
+	}}
+	inbox := &mockInboxRepo{}
+	uc := &usecase.DailyReminderUseCase{
+		PatientRepo:      &mockPatientRepo{patients: patients},
+		NotificationRepo: &mockNotifRepo{},
+		InboxRepo:        inbox,
+		WhatsApp:         &mockSender{},
+		Log:              zap.NewNop(),
+	}
+
+	uc.Run(context.Background(), "noon")
+
+	if len(inbox.created) != 1 {
+		t.Fatalf("expected exactly 1 inbox row (patient only), got %d", len(inbox.created))
+	}
+	got := inbox.created[0]
+	if got.PatientID != "p1" {
+		t.Errorf("inbox PatientID = %q; want p1", got.PatientID)
+	}
+	if got.Type != entity.PatientNotifTypeDailyReminder {
+		t.Errorf("inbox Type = %q; want %q", got.Type, entity.PatientNotifTypeDailyReminder)
+	}
+}
+
+func TestRun_SkipsInboxWhenAlreadySentToday(t *testing.T) {
+	patients := []entity.Patient{{ID: "p1", FullName: "Budi", PhoneNumber: "628111", Status: "active"}}
+	inbox := &mockInboxRepo{}
+	uc := &usecase.DailyReminderUseCase{
+		PatientRepo:      &mockPatientRepo{patients: patients},
+		NotificationRepo: &mockNotifRepo{existsResult: true},
+		InboxRepo:        inbox,
+		WhatsApp:         &mockSender{},
+		Log:              zap.NewNop(),
+	}
+
+	uc.Run(context.Background(), "noon")
+
+	if len(inbox.created) != 0 {
+		t.Errorf("expected no inbox row when already reminded today, got %d", len(inbox.created))
 	}
 }
 
