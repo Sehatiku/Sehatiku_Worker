@@ -21,10 +21,12 @@ type BootStrapConfig struct {
 func BootStrap(cfg *BootStrapConfig) *job.Scheduler {
 	patientRepo := &repository.PatientRepository{DB: cfg.DB}
 	notifRepo := &repository.NotificationRepository{DB: cfg.DB}
+	inboxRepo := &repository.PatientNotificationRepository{DB: cfg.DB}
 
 	reminderUC := &usecase.DailyReminderUseCase{
 		PatientRepo:      patientRepo,
 		NotificationRepo: notifRepo,
+		InboxRepo:        inboxRepo,
 		WhatsApp:         cfg.WhatsApp,
 		Log:              cfg.Log,
 	}

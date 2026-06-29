@@ -2,6 +2,7 @@ package job
 
 import (
 	"sehatiku-notification-worker/internal/usecase"
+	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/spf13/viper"
@@ -13,8 +14,24 @@ type Scheduler struct {
 	log  *zap.Logger
 }
 
+// appLocation memuat zona waktu aplikasi dari APP_TIMEZONE (default Asia/Jakarta), dengan
+// fallback statis UTC+7 bila tzdata tidak tersedia di host. Pola ini identik dengan main
+// backend (patient_dashboard_usecase.go) agar worker & backend memakai "hari ini" yang sama.
+func appLocation(cfg *viper.Viper) *time.Location {
+	name := cfg.GetString("APP_TIMEZONE")
+	if name == "" {
+		name = "Asia/Jakarta"
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return time.FixedZone("WIB", 7*60*60)
+	}
+	return loc
+}
+
 func NewScheduler(cfg *viper.Viper, log *zap.Logger, uc *usecase.DailyReminderUseCase) *Scheduler {
-	c := cron.New()
+	loc := appLocation(cfg)
+	c := cron.New(cron.WithLocation(loc))
 
 	noonJob := &ReminderJob{UseCase: uc, RunType: "noon", Log: log}
 	eveningJob := &ReminderJob{UseCase: uc, RunType: "evening", Log: log}
@@ -34,6 +51,7 @@ func NewScheduler(cfg *viper.Viper, log *zap.Logger, uc *usecase.DailyReminderUs
 	log.Info("scheduler configured",
 		zap.String("noon", noonExpr),
 		zap.String("evening", eveningExpr),
+		zap.String("timezone", loc.String()),
 	)
 
 	return &Scheduler{cron: c, log: log}

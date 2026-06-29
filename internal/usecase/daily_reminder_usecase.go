@@ -27,6 +27,7 @@ type RunSummary struct {
 type DailyReminderUseCase struct {
 	PatientRepo      repository.PatientQuerier
 	NotificationRepo repository.NotificationStore
+	InboxRepo        repository.InboxStore
 	WhatsApp         WhatsAppSender
 	Log              *zap.Logger
 }
@@ -69,6 +70,11 @@ func (uc *DailyReminderUseCase) processPatient(ctx context.Context, p entity.Pat
 		s.SkippedAlreadySent++
 		return
 	}
+
+	// Catat pengingat ke inbox in-app pasien (patient_notifications). Independen dari WA:
+	// pasien tetap melihat pengingat di app meski WA gagal. Best-effort — hanya pasien
+	// (pendamping tidak punya akun app), gagal cukup di-log. Dedup harian sudah dijaga di atas.
+	uc.createInboxReminder(ctx, p.ID, runType)
 
 	patientNotif := &entity.Notification{
 		ID:             uuid.New().String(),
@@ -129,6 +135,28 @@ func (uc *DailyReminderUseCase) processPatient(ctx context.Context, p entity.Pat
 		return
 	}
 	_ = uc.NotificationRepo.UpdateStatus(ctx, companionNotif.ID, "sent", nil)
+}
+
+func (uc *DailyReminderUseCase) createInboxReminder(ctx context.Context, patientID, runType string) {
+	if uc.InboxRepo == nil {
+		return
+	}
+	body := "Hari ini belum ada catatan kesehatanmu. Masih sempat, catat sekarang ya."
+	if runType == "noon" {
+		body = "Jangan lupa catat data kesehatanmu hari ini ya."
+	}
+	notif := &entity.PatientNotification{
+		ID:        uuid.New().String(),
+		PatientID: patientID,
+		Type:      entity.PatientNotifTypeDailyReminder,
+		Title:     "Pengingat catatan harian",
+		Body:      body,
+		Payload:   mustMarshal(map[string]string{"run_type": runType}),
+	}
+	if err := uc.InboxRepo.Create(ctx, notif); err != nil {
+		uc.Log.Warn("failed to create in-app daily reminder",
+			zap.String("patient_id", patientID), zap.Error(err))
+	}
 }
 
 func mustMarshal(v any) json.RawMessage {
