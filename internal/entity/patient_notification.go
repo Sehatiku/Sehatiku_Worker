@@ -20,4 +20,7 @@ type PatientNotification struct {
 
 func (PatientNotification) TableName() string { return "patient_notifications" }
 
-const PatientNotifTypeDailyReminder = "daily_reminder"
+const (
+	PatientNotifTypeDailyReminder = "daily_reminder"
+	PatientNotifTypeEscalation    = "escalation"
+)
