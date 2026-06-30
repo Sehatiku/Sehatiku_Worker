@@ -22,6 +22,8 @@ func BootStrap(cfg *BootStrapConfig) *job.Scheduler {
 	patientRepo := &repository.PatientRepository{DB: cfg.DB}
 	notifRepo := &repository.NotificationRepository{DB: cfg.DB}
 	inboxRepo := &repository.PatientNotificationRepository{DB: cfg.DB}
+	escalationRepo := &repository.EscalationRepository{DB: cfg.DB}
+	trendRepo := &repository.TrendRepository{DB: cfg.DB}
 
 	reminderUC := &usecase.DailyReminderUseCase{
 		PatientRepo:      patientRepo,
@@ -30,8 +32,16 @@ func BootStrap(cfg *BootStrapConfig) *job.Scheduler {
 		WhatsApp:         cfg.WhatsApp,
 		Log:              cfg.Log,
 	}
+	trendUC := &usecase.TrendEscalationUseCase{
+		TrendRepo:      trendRepo,
+		EscalationRepo: escalationRepo,
+		InboxRepo:      inboxRepo,
+		WaswasDays:     cfg.Config.GetInt("TREND_WASWAS_DAYS"),
+		CooldownDays:   cfg.Config.GetInt("TREND_COOLDOWN_DAYS"),
+		Log:            cfg.Log,
+	}
 
-	scheduler := job.NewScheduler(cfg.Config, cfg.Log, reminderUC)
+	scheduler := job.NewScheduler(cfg.Config, cfg.Log, reminderUC, trendUC)
 	scheduler.Start()
 	return scheduler
 }

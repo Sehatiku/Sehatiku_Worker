@@ -29,7 +29,7 @@ func appLocation(cfg *viper.Viper) *time.Location {
 	return loc
 }
 
-func NewScheduler(cfg *viper.Viper, log *zap.Logger, uc *usecase.DailyReminderUseCase) *Scheduler {
+func NewScheduler(cfg *viper.Viper, log *zap.Logger, uc *usecase.DailyReminderUseCase, trendUC *usecase.TrendEscalationUseCase) *Scheduler {
 	loc := appLocation(cfg)
 	c := cron.New(cron.WithLocation(loc))
 
@@ -48,9 +48,20 @@ func NewScheduler(cfg *viper.Viper, log *zap.Logger, uc *usecase.DailyReminderUs
 			zap.String("expr", eveningExpr), zap.Error(err))
 	}
 
+	trendJob := &TrendEscalationJob{UseCase: trendUC, Log: log}
+	trendExpr := cfg.GetString("TREND_ESCALATION_CRON")
+	if trendExpr == "" {
+		trendExpr = "0 6 * * *" // default 06:00 WIB harian
+	}
+	if _, err := c.AddJob(trendExpr, trendJob); err != nil {
+		log.Fatal("invalid trend escalation cron expression",
+			zap.String("expr", trendExpr), zap.Error(err))
+	}
+
 	log.Info("scheduler configured",
 		zap.String("noon", noonExpr),
 		zap.String("evening", eveningExpr),
+		zap.String("trend_escalation", trendExpr),
 		zap.String("timezone", loc.String()),
 	)
 
