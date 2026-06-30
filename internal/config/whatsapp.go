@@ -7,12 +7,13 @@ import (
 	"github.com/spf13/viper"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
-func SetUpWhatsApp(_ *viper.Viper, log *zap.Logger, db *gorm.DB) *whatsapp.WhatsAppGateway {
+func SetUpWhatsApp(v *viper.Viper, log *zap.Logger, db *gorm.DB) *whatsapp.WhatsAppGateway {
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatal("failed to get sql.DB for whatsapp sqlstore", zap.Error(err))
@@ -31,6 +32,24 @@ func SetUpWhatsApp(_ *viper.Viper, log *zap.Logger, db *gorm.DB) *whatsapp.Whats
 
 	client := whatsmeow.NewClient(deviceStore, waLogger)
 	client.EnableAutoReconnect = true
+
+	if proxyAddr := v.GetString("WA_PROXY"); proxyAddr != "" {
+		if err := client.SetProxyAddress(proxyAddr); err != nil {
+			log.Fatal("invalid WA_PROXY address", zap.Error(err))
+		}
+		log.Info("whatsapp proxy configured", zap.String("proxy", proxyAddr))
+	}
+
+	client.AddEventHandler(func(evt interface{}) {
+		switch evt.(type) {
+		case *events.Connected:
+			log.Info("whatsapp connected")
+		case *events.Disconnected:
+			log.Warn("whatsapp disconnected")
+		case *events.LoggedOut:
+			log.Warn("whatsapp client was logged out — re-pair needed")
+		}
+	})
 
 	if client.Store.ID == nil {
 		log.Warn("whatsapp client not paired — run 'make setup-wa' to pair")
